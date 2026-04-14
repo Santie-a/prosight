@@ -9,7 +9,7 @@ import { AnalysisResult } from '@/components/AnalysisResult';
 import { useImagePicker, PickedImage } from '@/hooks/useImagePicker';
 import { visionAPI } from '@/services/api';
 
-type DetailLevel = 'brief' | 'detailed' | 'navigation';
+type DetailLevel = 'read' | 'detailed' | 'navigation';
 
 export default function VisionScreen() {
   const { theme, fontSize } = useAccessibility();
@@ -20,7 +20,6 @@ export default function VisionScreen() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ description: string } | null>(null);
   const [detailLevel, setDetailLevel] = useState<DetailLevel>('detailed');
-  const [resultTimestamp, setResultTimestamp] = useState<Date | null>(null);
 
   // Image picker hook
   const { capturePhoto, selectFromGallery, error: pickerError, setError: setPickerError } = useImagePicker();
@@ -45,17 +44,27 @@ export default function VisionScreen() {
       marginBottom: 12,
     },
     detailLevelContainer: {
-      flexDirection: 'row',
+      paddingBottom: 12,
+      flexDirection: 'row', 
+      flexWrap: 'wrap',
+      justifyContent: 'center', 
+      alignItems: 'center',
       gap: 8,
-      justifyContent: 'center',
+      width: '100%',
     },
     detailButton: {
-      paddingHorizontal: 12,
-      paddingVertical: 8,
+      paddingHorizontal: 20,
+      paddingVertical: 12,
       borderRadius: 8,
       borderWidth: 2,
       borderColor: theme.border,
       backgroundColor: 'transparent',
+      justifyContent: 'center',
+      alignItems: 'center',
+      
+      // Opcional: Dale un ancho mínimo o basado en porcentaje si quieres
+      // que se vean uniformes, por ejemplo:
+      minWidth: '30%', 
     },
     detailButtonActive: {
       borderColor: theme.primary,
@@ -69,12 +78,19 @@ export default function VisionScreen() {
     detailButtonTextActive: {
       color: '#FFFFFF',
     },
+    scrollContent: {
+      flexGrow: 1, // Permite que el contenido se estire para llenar el ScrollView
+    },
     selectionButtonsContainer: {
-      flexDirection: 'row',
+      flex: 1,
+      flexDirection: 'column',
       gap: 12,
       justifyContent: 'space-between',
     },
-    selectionButton: {
+    selectionButton75: {
+      flex: 3,
+    },
+    selectionButton25: {
       flex: 1,
     },
     errorContainer: {
@@ -89,18 +105,6 @@ export default function VisionScreen() {
       fontSize: fontSize.body - 2,
       color: theme.primary,
     },
-    emptyStateContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingVertical: 40,
-    },
-    emptyStateText: {
-      fontSize: fontSize.body,
-      color: theme.textSecondary,
-      textAlign: 'center',
-      marginTop: 12,
-    },
     analyzeButtonContainer: {
       paddingVertical: 12,
     },
@@ -114,7 +118,6 @@ export default function VisionScreen() {
     if (image) {
       setSelectedImage(image);
       setResult(null);
-      setResultTimestamp(null);
     }
   };
 
@@ -126,7 +129,6 @@ export default function VisionScreen() {
     if (image) {
       setSelectedImage(image);
       setResult(null);
-      setResultTimestamp(null);
     }
   };
 
@@ -138,7 +140,6 @@ export default function VisionScreen() {
     if (image) {
       setSelectedImage(image);
       setResult(null);
-      setResultTimestamp(null);
     }
   };
 
@@ -146,7 +147,6 @@ export default function VisionScreen() {
   const handleClearImage = () => {
     setSelectedImage(null);
     setResult(null);
-    setResultTimestamp(null);
     setError(null);
     setPickerError(null);
   };
@@ -164,7 +164,6 @@ export default function VisionScreen() {
     try {
       const response = await visionAPI.describe(selectedImage.uri, detailLevel);
       setResult(response);
-      setResultTimestamp(new Date());
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to analyze image';
       setError(message);
@@ -193,7 +192,6 @@ export default function VisionScreen() {
   const handleAnalyzeAnother = () => {
     setSelectedImage(null);
     setResult(null);
-    setResultTimestamp(null);
     setError(null);
   };
 
@@ -213,7 +211,6 @@ export default function VisionScreen() {
         <AnalysisResult
           description={result.description}
           imageUri={selectedImage.uri}
-          timestamp={resultTimestamp || undefined}
           onAnalyzeAnother={handleAnalyzeAnother}
           onCopy={handleCopyDescription}
         />
@@ -226,6 +223,17 @@ export default function VisionScreen() {
     return (
       <View style={styles.container}>
         <ScrollView style={styles.content}>
+          {/* Analyze Button */}
+          <View style={styles.analyzeButtonContainer}>
+            <Button
+              onPress={handleAnalyzeImage}
+              title="Analyze Image"
+              variant="primary"
+              disabled={loading}
+            />
+          </View>
+
+          {/* Image preview */}
           <ImagePreview
             image={selectedImage}
             onReplace={handleReplaceImage}
@@ -237,7 +245,7 @@ export default function VisionScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Analysis Detail</Text>
             <View style={styles.detailLevelContainer}>
-              {(['brief', 'detailed', 'navigation'] as const).map((level) => (
+              {(['read', 'detailed', 'navigation'] as const).map((level) => (
                 <Pressable
                   key={level}
                   onPress={() => setDetailLevel(level)}
@@ -267,15 +275,6 @@ export default function VisionScreen() {
             </View>
           )}
 
-          {/* Analyze Button */}
-          <View style={styles.analyzeButtonContainer}>
-            <Button
-              onPress={handleAnalyzeImage}
-              title="Analyze Image"
-              variant="primary"
-              disabled={loading}
-            />
-          </View>
         </ScrollView>
       </View>
     );
@@ -284,7 +283,10 @@ export default function VisionScreen() {
   // Show image selection screen
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.content}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.scrollContent}
+      >
         {/* Error message */}
         {(error || pickerError) && (
           <View style={styles.errorContainer}>
@@ -292,28 +294,25 @@ export default function VisionScreen() {
           </View>
         )}
 
-        {/* Empty state */}
-        <View style={styles.emptyStateContainer}>
-          <Text style={{ fontSize: 48 }}>📷</Text>
-          <Text style={styles.sectionTitle}>Select an Image</Text>
-          <Text style={styles.emptyStateText}>
-            Choose an image from your device or capture a new one to analyze
-          </Text>
-        </View>
-
         {/* Selection buttons */}
         <View style={styles.selectionButtonsContainer}>
-          <View style={styles.selectionButton}>
+          <View style={styles.selectionButton75}>
             <Button
+              style={{ flex: 1 }}
+              iconName="camera"
+              iconSize={128}
               onPress={handleCapturePhoto}
               title="Capture Photo"
               variant="primary"
               disabled={loading}
             />
           </View>
-          <View style={styles.selectionButton}>
+          <View style={styles.selectionButton25}>
             <Button
+              style={{ flex: 1 }}
               onPress={handleSelectFromGallery}
+              iconName="images"
+              iconSize={64}
               title="Select from Gallery"
               variant="secondary"
               disabled={loading}

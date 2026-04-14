@@ -30,11 +30,11 @@ export const FONT_SIZES: Record<string, FontSizes> = {
   },
   extraLarge: {
     label: 'Extra Large',
-    title: 26,
-    subtitle: 20,
-    body: 22,
-    button: 18,
-    large: 28,
+    title: 38,
+    subtitle: 32,
+    body: 34,
+    button: 30,
+    large: 30,
   },
 };
 

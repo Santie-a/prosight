@@ -8,7 +8,6 @@ import {
   AccessibilityInfo,
 } from 'react-native';
 import { useAccessibility } from '@/contexts/AccessibilityContext';
-import { Header } from '@/components/ui/Header';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
 import { ThemeName, FontSizeName } from '@/hooks/types';
@@ -189,8 +188,6 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.container}>
-      <Header title="Settings" subtitle="Customize your experience" />
-
       <ScrollView contentContainerStyle={styles.content}>
         {/* Theme Selection */}
         <View style={styles.section}>

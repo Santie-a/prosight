@@ -115,7 +115,7 @@ async function imageToAudio(imageFile) {
 Content-Type: multipart/form-data
 
 image: <file>
-detail_level: "brief" | "detailed" | "navigation"
+detail_level: "read" | "detailed" | "navigation"
 ```
 
 **Response (200):**

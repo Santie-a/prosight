@@ -13,12 +13,12 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/vision", tags=["vision"])
 
-VALID_DETAIL_LEVELS = {"brief", "detailed", "navigation"}
+VALID_DETAIL_LEVELS = {"read", "detailed", "navigation"}
 
 PROMPTS = {
-    "brief": (
-        "Describe this image in one or two sentences. "
-        "Be concise and focus on the most important element."
+    "read": (
+        "Read the text in the image.",
+        "Do not include line breaks or quotes."
     ),
     "detailed": (
         "Describe this image in detail. Include the main subjects, "

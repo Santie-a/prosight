@@ -28,7 +28,7 @@ export const healthAPI = {
 export const visionAPI = {
   describe: async (
     imageUri: string,
-    detailLevel: 'brief' | 'detailed' | 'navigation' = 'detailed'
+    detailLevel: 'read' | 'detailed' | 'navigation' = 'detailed'
   ) => {
     const formData = new FormData();
     formData.append('image', {

@@ -98,14 +98,14 @@ Content-Type: multipart/form-data
 
 Parameters:
   - image (file, required): JPEG or PNG image file (max 10 MB)
-  - detail_level (string, optional): "brief" | "detailed" | "navigation"
+  - detail_level (string, optional): "read" | "detailed" | "navigation"
     Default: "detailed"
 ```
 
 **Detail Levels**:
 | Level | Purpose | Use Case |
 |-------|---------|----------|
-| `brief` | 1-2 sentence summary | Quick overview |
+| `read` | Tries to read the text present in the image | Reading text |
 | `detailed` | Comprehensive description with subjects, positions, colors, text | General image understanding |
 | `navigation` | Focus on obstacles, pathways, people, signage | Accessibility, wayfinding |
 
@@ -444,298 +444,13 @@ a.click();
 
 ---
 
-### WebSocket `/api/v1/tts/stream-text`
-
-Stream text-to-speech synthesis in real-time via WebSocket.
-
-**Perfect for**: Real-time audio streaming of image descriptions with progress feedback.
-
-**Connection**:
-```
-ws://localhost:8000/api/v1/tts/stream-text
-```
-
-**Protocol**:
-1. Client connects
-2. Client sends JSON message with text
-3. Server sends stream metadata
-4. Server sends binary audio frames (64 KB chunks)
-5. Server sends completion message
-6. Connection closes
-
-**Message Flow**:
-
-**Client → Server (Initial Message)**:
-```json
-{
-  "text": "Description of the image here"
-}
-```
-
-**Server → Client (Stream Start)**:
-```json
-{
-  "type": "stream_start",
-  "text": "Description of the image here"
-}
-```
-
-**Server → Client (Audio Frames - Binary)**:
-```
-[64 KB WAV audio data chunk 1]
-[64 KB WAV audio data chunk 2]
-...
-```
-
-**Server → Client (Stream Complete)**:
-```json
-{
-  "type": "stream_complete"
-}
-```
-
-**Error Response (on invalid input)**:
-```json
-{
-  "type": "error",
-  "code": "invalid_text",
-  "message": "Text field is required and must not be empty"
-}
-```
-
-**Possible Error Codes**:
-- `"invalid_json"` - Message is not valid JSON
-- `"invalid_text"` - Text field missing or empty
-- `"synthesis_failed"` - TTS synthesis error
-
-**JavaScript Example**:
-```javascript
-const socket = new WebSocket('ws://localhost:8000/api/v1/tts/stream-text');
-
-socket.onopen = () => {
-  console.log('Connected to TTS stream');
-  socket.send(JSON.stringify({
-    text: 'This is the image description'
-  }));
-};
-
-let audioBuffer = [];
-
-socket.onmessage = (event) => {
-  if (event.data instanceof Blob) {
-    // Binary audio frame
-    audioBuffer.push(event.data);
-  } else {
-    // Text message
-    const msg = JSON.parse(event.data);
-    
-    if (msg.type === 'stream_start') {
-      console.log('Synthesis started');
-      audioBuffer = [];
-    } else if (msg.type === 'stream_complete') {
-      console.log('Synthesis complete, received', audioBuffer.length, 'frames');
-      
-      // Combine all frames into single blob
-      const fullAudio = new Blob(audioBuffer, { type: 'audio/wav' });
-      const url = URL.createObjectURL(fullAudio);
-      
-      // Play or download
-      const audio = new Audio(url);
-      audio.play();
-    } else if (msg.type === 'error') {
-      console.error(`Error: ${msg.code} - ${msg.message}`);
-    }
-  }
-};
-
-socket.onerror = (error) => {
-  console.error('WebSocket error:', error);
-};
-```
-
----
-
-### WebSocket `/api/v1/tts/stream/{document_id}`
-
-Stream text-to-speech synthesis of document chunks with playback controls.
-
-**Perfect for**: Document audiobook experience with pause, resume, navigation.
-
-**Connection**:
-```
-ws://localhost:8000/api/v1/tts/stream/{document_id}?chunk_index=0
-```
-
-**Query Parameters**:
-- `chunk_index` (integer, optional): Starting chunk index. Default: 0
-
-**Client Actions**:
-
-**Action: play**
-```json
-{ "action": "play" }
-```
-Start or resume synthesis from current chunk.
-
-**Action: pause**
-```json
-{ "action": "pause" }
-```
-Pause synthesis without moving position.
-
-**Action: resume**
-```json
-{ "action": "resume" }
-```
-Resume synthesis from current position.
-
-**Action: next**
-```json
-{ "action": "next" }
-```
-Move to next chunk and start synthesis.
-
-**Action: previous**
-```json
-{ "action": "previous" }
-```
-Move to previous chunk and start synthesis (minimum chunk 0).
-
-**Action: jump_to_section**
-```json
-{
-  "action": "jump_to_section",
-  "section_id": "section-002"
-}
-```
-Jump to a specific section and start synthesis.
-
----
-
-**Server Messages**:
-
-**chunk_info** - Metadata about current chunk being synthesized:
-```json
-{
-  "type": "chunk_info",
-  "chunk_index": 5,
-  "page_number": 2,
-  "total_chunks": 156,
-  "text": "Text content of the chunk being synthesized..."
-}
-```
-
-**Binary Audio Frames**:
-```
-[64 KB WAV audio data chunk 1]
-[64 KB WAV audio data chunk 2]
-...
-```
-
-**chunk_complete** - Current chunk synthesis finished:
-```json
-{
-  "type": "chunk_complete",
-  "chunk_index": 5
-}
-```
-
-**end_of_document** - Reached last chunk:
-```json
-{
-  "type": "end_of_document"
-}
-```
-
-**error** - Error occurred:
-```json
-{
-  "type": "error",
-  "code": "not_found",
-  "message": "Document not found."
-}
-```
-
-**Possible Error Codes**:
-- `"not_found"` - Document doesn't exist
-- `"empty_document"` - Document has no chunks
-- `"invalid_message"` - Message not valid JSON
-- `"missing_field"` - Required field in message
-- `"unknown_action"` - Invalid action value
-- `"tts_failed"` - Synthesis error
-- `"internal_error"` - Unexpected server error
-
-**JavaScript Example**:
-```javascript
-const socket = new WebSocket(
-  'ws://localhost:8000/api/v1/tts/stream/550e8400-e29b-41d4-a716-446655440000?chunk_index=0'
-);
-
-let audioBuffer = [];
-
-socket.onopen = () => {
-  console.log('Connected');
-  socket.send(JSON.stringify({ action: 'play' }));
-};
-
-socket.onmessage = (event) => {
-  if (event.data instanceof Blob) {
-    // Binary audio frame
-    audioBuffer.push(event.data);
-  } else {
-    // Text message
-    const msg = JSON.parse(event.data);
-    
-    if (msg.type === 'chunk_info') {
-      console.log(`Playing chunk ${msg.chunk_index}/${msg.total_chunks - 1} (page ${msg.page_number})`);
-      console.log(`Text: ${msg.text.substring(0, 60)}...`);
-      audioBuffer = [];
-    } else if (msg.type === 'chunk_complete') {
-      console.log(`Chunk ${msg.chunk_index} complete`);
-      
-      // Play audio
-      const fullAudio = new Blob(audioBuffer, { type: 'audio/wav' });
-      const audio = new Audio(URL.createObjectURL(fullAudio));
-      audio.play();
-      
-      // Auto-play next chunk
-      // socket.send(JSON.stringify({ action: 'next' }));
-    } else if (msg.type === 'end_of_document') {
-      console.log('End of document reached');
-      socket.close();
-    } else if (msg.type === 'error') {
-      console.error(`Error: ${msg.code} - ${msg.message}`);
-    }
-  }
-};
-
-// UI Controls
-document.getElementById('pauseBtn').onclick = () => {
-  socket.send(JSON.stringify({ action: 'pause' }));
-};
-
-document.getElementById('resumeBtn').onclick = () => {
-  socket.send(JSON.stringify({ action: 'resume' }));
-};
-
-document.getElementById('nextBtn').onclick = () => {
-  socket.send(JSON.stringify({ action: 'next' }));
-};
-
-document.getElementById('prevBtn').onclick = () => {
-  socket.send(JSON.stringify({ action: 'previous' }));
-};
-```
-
----
-
 ## Data Schemas
 
 ### Image Description Response
 ```typescript
 {
   description: string;      // Generated description
-  detail_level: string;     // "brief" | "detailed" | "navigation"
+  detail_level: string;     // "read" | "detailed" | "navigation"
   processing_ms: number;    // Processing time in milliseconds
 }
 ```
@@ -905,10 +620,8 @@ const response = await fetch('http://localhost:8000/api/v1/documents/upload', {
 ## Development Tips
 
 1. **Test Endpoints with Swagger UI**: http://localhost:8000/docs
-2. **Monitor WebSocket traffic**: Browser DevTools → Network → WS
 3. **Use ReDoc for detailed schema reference**: http://localhost:8000/redoc
 4. **Start with health check**: Verify all providers are ready before proceeding
-5. **Handle WebSocket reconnection**: Implement exponential backoff retry logic
 6. **Buffer audio frames**: Combine binary frames in correct order before playback
 7. **Set text limits**: Validate input before sending (1-10,000 chars for TTS)
 
@@ -920,6 +633,4 @@ const response = await fetch('http://localhost:8000/api/v1/documents/upload', {
 - ✅ Vision endpoint for image description
 - ✅ Document upload and parsing
 - ✅ REST TTS endpoint for ad-hoc text synthesis
-- ✅ WebSocket TTS for real-time streaming
-- ✅ Document-based TTS with playback controls
 - ✅ Health check endpoint

@@ -8,7 +8,6 @@ import { useAudioPlayback } from '@/hooks/useAudioPlayback';
 interface AnalysisResultProps {
   description: string;
   imageUri?: string;
-  timestamp?: Date;
   onAnalyzeAnother: () => void;
   onCopy?: () => void;
 }
@@ -32,7 +31,6 @@ const formatTime = (milliseconds: number): string => {
 export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   description,
   imageUri,
-  timestamp,
   onAnalyzeAnother,
   onCopy,
 }) => {
@@ -192,16 +190,6 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.headerContainer}>
-        <Text style={styles.title}>Analysis Result</Text>
-        {timestamp && (
-          <Text style={styles.timestamp}>
-            {formatDateTime(timestamp)}
-          </Text>
-        )}
-      </View>
-
       {/* Image Display */}
       {imageUri && (
         <View style={styles.imageContainer}>
