@@ -2,13 +2,10 @@ import logging
 import time
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from app.db.database import get_db
-from app.db.models import ImageDescription
 from app.dependencies import VLMDep
 from app.schemas.vision import DescribeResponse
-from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/vision", tags=["vision"])
@@ -40,7 +37,6 @@ MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
 @router.post("/describe", response_model=DescribeResponse)
 async def describe_image(
     vlm: VLMDep,
-    db: Annotated[Session, Depends(get_db)],
     image: UploadFile = File(..., description="JPEG or PNG image"),
     detail_level: str = Form(default="detailed"),
 ) -> DescribeResponse:
@@ -86,16 +82,6 @@ async def describe_image(
     processing_ms = int((time.perf_counter() - start) * 1000)
 
     logger.info("VLM inference complete | %d ms", processing_ms)
-
-    # --- Persist result ---
-    record = ImageDescription(
-        file_path=image.filename or "unknown",
-        detail_level=detail_level,
-        description=description,
-        processing_ms=processing_ms,
-    )
-    db.add(record)
-    db.commit()
 
     return DescribeResponse(
         description=description,

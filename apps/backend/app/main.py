@@ -10,7 +10,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.db.database import init_db
 from app.dependencies import set_tts_provider, set_vlm_provider
 from app.routers import health, vision, documents, tts
 
@@ -27,10 +26,6 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # --- Startup ---
     logger.info("Starting up...")
-
-    logger.info("Initializing database...")
-    init_db()
-    logger.info("Database ready.")
 
     logger.info("Loading VLM provider: %s", settings.vlm_provider)
     vlm = _load_vlm_provider()

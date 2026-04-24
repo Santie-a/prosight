@@ -11,9 +11,6 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_debug: bool = True
 
-    # --- Database ---
-    database_url: str = "sqlite:///./vision_app.db"
-
     # --- Storage ---
     uploads_dir: Path = Path("./uploads")
     ml_models_dir: Path = Path("./ml_models")
