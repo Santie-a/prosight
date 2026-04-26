@@ -7,6 +7,7 @@ FastAPI-based backend for the Prosight low-vision accessibility application. Pro
 - **Document Processing**: PDF upload and parsing with text extraction (in-memory, stateless)
 - **Vision Analysis**: Vision Language Model (VLM) integration for image analysis with on-demand inference
 - **Text-to-Speech (TTS)**: Convert text to audio using high-quality TTS models
+- **Optical Character Recognition (OCR)**: RapidOCR-powered text extraction from images with ONNX Runtime acceleration
 - **File Storage**: Efficient temporary file handling
 
 ## Tech Stack
@@ -15,11 +16,12 @@ FastAPI-based backend for the Prosight low-vision accessibility application. Pro
 - **Server**: Uvicorn 0.30.6
 - **ML Models**:
   - Vision: Moondream2 (via Transformers 4.44.2)
+  - OCR: RapidOCR 1.4.4 (via ONNX Runtime 1.24.3)
   - TTS: Kokoro 0.9.4
-  - Acceleration: HuggingFace Accelerate 0.34.2
+  - Acceleration: HuggingFace Accelerate 0.34.2, ONNX Runtime 1.24.3
 - **PDF Processing**: PyMuPDF 1.24.10
 - **Audio**: SoundFile 0.12.1
-- **Images**: Pillow 10.4.0
+- **Images**: Pillow 10.4.0, OpenCV 4.13.0
 - **Async**: aiofiles 24.1.0
 - **Config**: Pydantic Settings 2.4.0
 
@@ -63,6 +65,10 @@ APP_DEBUG=False
 
 # VLM Provider (moondream, or other supported models)
 VLM_PROVIDER=moondream
+
+# OCR Provider (rapidocr, or other supported providers)
+OCR_PROVIDER=rapidocr
+OCR_DEVICE=cpu  # or cuda for GPU acceleration
 
 # TTS Provider (kokoro, or other supported providers)
 TTS_PROVIDER=kokoro
