@@ -18,6 +18,56 @@ api.interceptors.response.use(
   }
 );
 
+// ---------------------------------------------------------------------------
+// Response types
+// ---------------------------------------------------------------------------
+
+interface BoundingBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+interface TableData {
+  rows: string[][];
+  headers: string[] | null;
+  markdown: string;
+}
+
+export interface ContentBlockResponse {
+  id: string;
+  page_number: number;
+  block_index: number;
+  block_type: 'text' | 'heading' | 'table' | 'figure' | 'formula';
+  text: string | null;
+  ocr_text: string | null;
+  bbox: BoundingBox | null;
+  file_id: string | null;
+  ai_description: string | null;
+  tts_override: string | null;
+  table: TableData | null;
+}
+
+export interface SectionResponse {
+  id: string;
+  section_index: number;
+  title: string;
+  level: number;
+  start_block_id: string;
+}
+
+export interface ProcessedDocumentResponse {
+  title: string;
+  page_count: number;
+  blocks: ContentBlockResponse[];
+  sections: SectionResponse[];
+}
+
+// ---------------------------------------------------------------------------
+// API clients
+// ---------------------------------------------------------------------------
+
 export const healthAPI = {
   check: async () => {
     const response = await api.get('/health');
@@ -47,16 +97,18 @@ export const visionAPI = {
 
 export const documentsAPI = {
   /**
-   * Process a PDF file and extract chunks and sections in a single request.
-   * 
-   * Note: This is a stateless operation. The backend does NOT store the document.
-   * The frontend is responsible for storing the returned chunks and sections.
-   * 
-   * @param fileUri - URI of the PDF file to process
-   * @param fileName - Original filename of the PDF
-   * @returns {Promise<{title, page_count, chunk_count, section_count, chunks, sections}>}
+   * Process a PDF file and return typed content blocks and sections.
+   *
+   * Stateless — the backend does NOT store the document. The frontend is
+   * responsible for persisting the returned data via useDocumentStorage.
+   *
+   * @param fileUri  URI of the PDF file to process
+   * @param fileName Original filename of the PDF
    */
-  process: async (fileUri: string, fileName: string) => {
+  process: async (
+    fileUri: string,
+    fileName: string
+  ): Promise<ProcessedDocumentResponse> => {
     const formData = new FormData();
     formData.append('file', {
       uri: fileUri,
@@ -64,9 +116,11 @@ export const documentsAPI = {
       name: fileName,
     } as any);
 
-    const response = await api.post('/documents/process', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await api.post<ProcessedDocumentResponse>(
+      '/documents/process',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
     return response.data;
   },
 };
@@ -74,10 +128,9 @@ export const documentsAPI = {
 export const ttsAPI = {
   /**
    * Synthesize text to speech and return audio as a WAV file.
-   * 
-   * @param text - Text to synthesize (1-10,000 characters)
-   * @param voice - Optional voice name (default: af_heart)
-   * @returns {Promise<ArrayBuffer>} - WAV audio data
+   *
+   * @param text  Text to synthesize (1–10,000 characters)
+   * @param voice Optional voice name (default: af_heart)
    */
   synthesize: async (text: string, voice?: string): Promise<ArrayBuffer> => {
     const response = await api.post(

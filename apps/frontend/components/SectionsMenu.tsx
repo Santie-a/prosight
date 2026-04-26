@@ -9,30 +9,32 @@ import {
 } from 'react-native';
 import { useAccessibility } from '@/contexts/AccessibilityContext';
 import { Text } from '@/components/ui/Text';
-import { ChunkRecord, SectionRecord } from '@/constants/database-schema';
+import { ContentBlockRecord, SectionRecord } from '@/constants/database-schema';
 
 interface SectionsMenuProps {
   sections: SectionRecord[];
-  chunks: ChunkRecord[];
-  currentChunkIndex: number;
+  blocks: ContentBlockRecord[];
+  currentBlockIndex: number;
   visible: boolean;
   onClose: () => void;
-  onSectionSelect: (startChunkIndex: number) => void;
-  onChunkSelect: (chunkIndex: number) => void;
+  // Called with the flat list index of the first block in the section
+  onSectionSelect: (blockIndex: number) => void;
+  // Called with the flat list index of a specific block
+  onBlockSelect: (blockIndex: number) => void;
 }
 
 export const SectionsMenu: React.FC<SectionsMenuProps> = ({
   sections,
-  chunks,
-  currentChunkIndex,
+  blocks,
+  currentBlockIndex,
   visible,
   onClose,
   onSectionSelect,
-  onChunkSelect,
+  onBlockSelect,
 }) => {
   const { theme, fontSize } = useAccessibility();
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedSections, setExpandedSections] = useState<Set<number>>(
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set()
   );
 
@@ -81,19 +83,27 @@ export const SectionsMenu: React.FC<SectionsMenuProps> = ({
       borderBottomWidth: 1,
       borderBottomColor: theme.border,
       backgroundColor: theme.surface,
+      flexDirection: 'row',
+      alignItems: 'center',
     },
     sectionItemActive: {
       backgroundColor: `${theme.primary}15`,
     },
     sectionContent: {
+      flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      paddingVertical: 4,
+    },
+    expandButton: {
+      paddingHorizontal: 8,
+      paddingVertical: 4,
     },
     expandIcon: {
       fontSize: fontSize.body - 1,
       color: theme.textSecondary,
       minWidth: 20,
+      textAlign: 'center',
     },
     sectionTitle: {
       flex: 1,
@@ -101,7 +111,7 @@ export const SectionsMenu: React.FC<SectionsMenuProps> = ({
       color: theme.text,
       fontWeight: '500',
     },
-    chunkItem: {
+    blockItem: {
       paddingVertical: 6,
       paddingLeft: 40,
       paddingRight: 12,
@@ -109,14 +119,14 @@ export const SectionsMenu: React.FC<SectionsMenuProps> = ({
       borderBottomWidth: 1,
       borderBottomColor: theme.border,
     },
-    chunkItemActive: {
+    blockItemActive: {
       backgroundColor: `${theme.primary}10`,
     },
-    chunkText: {
+    blockPreviewText: {
       fontSize: fontSize.body - 2,
       color: theme.text,
     },
-    chunkPreview: {
+    blockPageText: {
       fontSize: fontSize.body - 3,
       color: theme.textSecondary,
       marginTop: 2,
@@ -135,103 +145,158 @@ export const SectionsMenu: React.FC<SectionsMenuProps> = ({
       fontSize: fontSize.button - 2,
       fontWeight: '600',
     },
+    emptyContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: theme.background,
+      paddingHorizontal: 16,
+    },
   });
 
-  const toggleSection = (id: number) => {
-    const newExpanded = new Set(expandedSections);
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id);
-    } else {
-      newExpanded.add(id);
-    }
-    setExpandedSections(newExpanded);
-  };
+  // ---------------------------------------------------------------------------
+  // Derive a block index lookup from start_block_id so we avoid O(n) finds
+  // inside render loops.
+  // ---------------------------------------------------------------------------
+  const blockIndexById = useMemo(() => {
+    const map = new Map<string, number>();
+    blocks.forEach((block, idx) => map.set(block.id, idx));
+    return map;
+  }, [blocks]);
 
-  // Calculate which chunks belong to each section
-  const getChunksForSection = (sectionIndex: number): ChunkRecord[] => {
+  /**
+   * Return all blocks that belong to a section, in reading order.
+   * A section owns blocks from its start_block_id up to (not including)
+   * the next section's start_block_id.
+   */
+  const getBlocksForSection = (sectionIndex: number): ContentBlockRecord[] => {
     const section = sections[sectionIndex];
     if (!section) return [];
 
-    const nextSection = sections[sectionIndex + 1];
-    const endIndex = nextSection
-      ? nextSection.start_chunk_index
-      : chunks.length;
+    const startIdx = blockIndexById.get(section.start_block_id);
+    if (startIdx === undefined) return [];
 
-    return chunks.slice(section.start_chunk_index, endIndex);
+    const nextSection = sections[sectionIndex + 1];
+    const endIdx = nextSection
+      ? (blockIndexById.get(nextSection.start_block_id) ?? blocks.length)
+      : blocks.length;
+
+    return blocks.slice(startIdx, endIdx);
   };
 
-  const filteredSections = useMemo(() => {
-    if (!searchQuery.trim()) return sections;
+  const toggleSection = (id: string) => {
+    const next = new Set(expandedSections);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setExpandedSections(next);
+  };
 
+  // ---------------------------------------------------------------------------
+  // Active section detection
+  // Uses block_index rather than a flat array position so it is stable even
+  // if the sections are filtered.
+  // ---------------------------------------------------------------------------
+  const isActiveSection = (sectionIndex: number): boolean => {
+    const section = sections[sectionIndex];
+    if (!section) return false;
+
+    const startIdx = blockIndexById.get(section.start_block_id);
+    if (startIdx === undefined) return false;
+    if (currentBlockIndex < startIdx) return false;
+
+    const nextSection = sections[sectionIndex + 1];
+    if (!nextSection) return true;
+
+    const nextStartIdx = blockIndexById.get(nextSection.start_block_id);
+    return nextStartIdx === undefined || currentBlockIndex < nextStartIdx;
+  };
+
+  // ---------------------------------------------------------------------------
+  // Search filter - with original section indices
+  // ---------------------------------------------------------------------------
+  const filteredSectionsWithIndex = useMemo(() => {
+    const mapped = sections.map((section, idx) => ({ section, originalIndex: idx }));
+    if (!searchQuery.trim()) return mapped;
     const query = searchQuery.toLowerCase();
-    return sections.filter((section, idx) => {
-      const sectionChunks = getChunksForSection(idx);
-      return (
-        section.title.toLowerCase().includes(query) ||
-        sectionChunks.some((chunk) => chunk.text.toLowerCase().includes(query))
+    return mapped.filter(({ section, originalIndex }) => {
+      if (section.title.toLowerCase().includes(query)) return true;
+      return getBlocksForSection(originalIndex).some(
+        (block) => block.text?.toLowerCase().includes(query)
       );
     });
-  }, [sections, chunks, searchQuery]);
+  }, [sections, blocks, searchQuery]);
+
+  // ---------------------------------------------------------------------------
+  // Render helpers
+  // ---------------------------------------------------------------------------
+
+  const blockPreview = (block: ContentBlockRecord): string => {
+    const raw = block.text ?? block.ocr_text ?? block.ai_description ?? '';
+    return raw.length > 60 ? raw.substring(0, 60) + '...' : raw;
+  };
 
   const renderSectionItem = (section: SectionRecord, sectionIndex: number) => {
     const isExpanded = expandedSections.has(section.id);
-    const sectionChunks = getChunksForSection(sectionIndex);
-    const isCurrentSection = currentChunkIndex >= section.start_chunk_index;
-    const nextSection = sections[sectionIndex + 1];
-    const isLastChunkInSection =
-      !nextSection || currentChunkIndex < nextSection.start_chunk_index;
-    const isActive = isCurrentSection && isLastChunkInSection;
+    const sectionBlocks = getBlocksForSection(sectionIndex);
+    const isActive = isActiveSection(sectionIndex);
+    const startIdx = blockIndexById.get(section.start_block_id);
 
     return (
       <View key={section.id}>
-        {/* Section Header */}
-        <Pressable
-          onPress={() => {
-            toggleSection(section.id);
-            onSectionSelect(section.start_chunk_index);
-          }}
+        <View
           style={[styles.sectionItem, isActive && styles.sectionItemActive]}
         >
-          <View
+          <Pressable
+            onPress={() => {
+              if (startIdx !== undefined) {
+                onSectionSelect(startIdx);
+              }
+            }}
             style={[
               styles.sectionContent,
-              {
-                paddingLeft: Math.max(0, (section.level - 1) * 12),
-              },
+              { paddingLeft: Math.max(0, (section.level - 1) * 12) },
             ]}
           >
-            <Text style={styles.expandIcon}>
-              {sectionChunks.length > 0 ? (isExpanded ? '▼' : '▶') : '•'}
-            </Text>
-            <Text style={styles.sectionTitle} numberOfLines={1}>
+            <Text style={styles.sectionTitle} numberOfLines={2}>
               {section.title}
             </Text>
-          </View>
-        </Pressable>
+          </Pressable>
+          {sectionBlocks.length > 0 && (
+            <Pressable
+              onPress={() => toggleSection(section.id)}
+              style={styles.expandButton}
+            >
+              <Text style={styles.expandIcon}>
+                {isExpanded ? '▼' : '▶'}
+              </Text>
+            </Pressable>
+          )}
+        </View>
 
-        {/* Chunks for this section */}
         {isExpanded &&
-          sectionChunks.map((chunk, idx) => {
-            const chunkIndex = section.start_chunk_index + idx;
-            const isChunkActive = currentChunkIndex === chunkIndex;
-            const preview =
-              chunk.text.length > 60
-                ? chunk.text.substring(0, 60) + '...'
-                : chunk.text;
+          sectionBlocks.map((block) => {
+            const blockIdx = blockIndexById.get(block.id);
+            if (blockIdx === undefined) return null;
+            const isBlockActive = currentBlockIndex === blockIdx;
 
             return (
               <Pressable
-                key={chunk.id}
-                onPress={() => onChunkSelect(chunkIndex)}
+                key={block.id}
+                onPress={() => onBlockSelect(blockIdx)}
                 style={[
-                  styles.chunkItem,
-                  isChunkActive && styles.chunkItemActive,
+                  styles.blockItem,
+                  isBlockActive && styles.blockItemActive,
                 ]}
               >
-                <Text style={styles.chunkText} numberOfLines={1}>
-                  {preview}
+                <Text style={styles.blockPreviewText} numberOfLines={1}>
+                  {blockPreview(block)}
                 </Text>
-                <Text style={styles.chunkPreview}>p. {chunk.page_number}</Text>
+                <Text style={styles.blockPageText}>
+                  p. {block.page_number}
+                </Text>
               </Pressable>
             );
           })}
@@ -243,7 +308,7 @@ export const SectionsMenu: React.FC<SectionsMenuProps> = ({
     <Modal
       visible={visible}
       animationType="fade"
-      transparent={true}
+      transparent
       onRequestClose={onClose}
     >
       <Pressable style={styles.modalContainer} onPress={onClose}>
@@ -251,7 +316,6 @@ export const SectionsMenu: React.FC<SectionsMenuProps> = ({
           style={styles.drawer}
           onPress={(e) => e.stopPropagation()}
         >
-          {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Contents</Text>
             <TextInput
@@ -263,32 +327,27 @@ export const SectionsMenu: React.FC<SectionsMenuProps> = ({
             />
           </View>
 
-          {/* Sections List */}
-          <View style={styles.listContainer}>
-            {filteredSections.length > 0 ? (
-              <FlatList
-                data={filteredSections}
-                keyExtractor={(item) => String(item.id)}
-                renderItem={({ item, index }) =>
-                  renderSectionItem(item, index)
-                }
-              />
-            ) : (
-              <View
-                style={{
-                  flex: 1,
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                }}
-              >
-                <Text style={{ color: theme.textSecondary }}>
-                  No sections found
+          <View style={styles.header}>
+            {filteredSectionsWithIndex.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Text style={{ color: theme.textSecondary, fontSize: fontSize.body }}>
+                  {sections.length === 0
+                    ? `No sections available (sections: ${sections.length})`
+                    : 'No sections found'}
                 </Text>
               </View>
+            ) : (
+              <FlatList
+                data={filteredSectionsWithIndex}
+                keyExtractor={(item) => item.section.id}
+                renderItem={({ item }) =>
+                  renderSectionItem(item.section, item.originalIndex)
+                }
+                scrollEnabled={true}
+              />
             )}
           </View>
 
-          {/* Close Button */}
           <Pressable onPress={onClose} style={styles.closeButton}>
             <Text style={styles.closeButtonText}>Close</Text>
           </Pressable>

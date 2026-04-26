@@ -1,8 +1,8 @@
 /**
  * React Hook: useDocumentStorage
- * 
- * High-level document storage operations
- * Wraps useDatabase with document-specific logic
+ *
+ * High-level document storage operations.
+ * Wraps useDatabase with document-specific logic.
  */
 
 import { useCallback } from 'react';
@@ -10,40 +10,85 @@ import * as Crypto from 'expo-crypto';
 import { useDatabase } from './useDatabase';
 import {
   DocumentRecord,
-  ChunkRecord,
+  ContentBlockRecord,
+  BlockTableRecord,
   SectionRecord,
   FileRecord,
 } from '@/constants/database-schema';
 
-/**
- * Response from API's /documents/process endpoint
- */
+// ---------------------------------------------------------------------------
+// API response shape — mirrors ProcessedDocumentResponse in schemas/documents.py
+// ---------------------------------------------------------------------------
+
+interface BoundingBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+interface TableData {
+  rows: string[][];
+  headers: string[] | null;
+  markdown: string;
+}
+
+interface ContentBlockResponse {
+  id: string;
+  page_number: number;
+  block_index: number;
+  block_type: 'text' | 'heading' | 'table' | 'figure' | 'formula';
+  text: string | null;
+  ocr_text: string | null;
+  bbox: BoundingBox | null;
+  file_id: string | null;
+  ai_description: string | null;
+  tts_override: string | null;
+  table: TableData | null;
+}
+
+interface SectionResponse {
+  id: string;
+  section_index: number;
+  title: string;
+  level: number;
+  start_block_id: string;
+}
+
 interface ProcessedDocumentResponse {
   title: string;
   page_count: number;
-  chunk_count: number;
-  section_count: number;
-  chunks: Array<{
-    index: number;
-    page_number: number;
-    text: string;
-  }>;
-  sections: Array<{
-    index: number;
-    title: string;
-    level: number;
-    start_chunk_index: number;
-  }>;
+  blocks: ContentBlockResponse[];
+  sections: SectionResponse[];
 }
+
+// ---------------------------------------------------------------------------
+// Return type for getDocumentWithContent
+// ---------------------------------------------------------------------------
+
+export interface DocumentWithContent {
+  document: DocumentRecord;
+  blocks: ContentBlockRecord[];
+  sections: SectionRecord[];
+  // Keyed by block_id for O(1) lookup in the render layer.
+  blockTables: Map<string, BlockTableRecord>;
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 export function useDocumentStorage() {
   const db = useDatabase();
 
   /**
-   * Store a complete processed document with all chunks and sections
-   * @param processedDoc API response from /documents/process
-   * @param fileData Binary PDF file data
-   * @param mimeType File MIME type
+   * Store a complete processed document with all blocks, table data,
+   * and sections returned from the /documents/process endpoint.
+   *
+   * @param processedDoc  API response from /documents/process
+   * @param fileData      Binary PDF content
+   * @param mimeType      File MIME type (defaults to application/pdf)
+   * @returns             The new document UUID
    */
   const storeProcessedDocument = useCallback(
     async (
@@ -51,12 +96,12 @@ export function useDocumentStorage() {
       fileData: Uint8Array,
       mimeType: string = 'application/pdf'
     ): Promise<string> => {
-      const docId = Crypto.randomUUID();;
-      const fileId = Crypto.randomUUID();;
+      const docId = Crypto.randomUUID();
+      const fileId = Crypto.randomUUID();
       const now = new Date().toISOString();
 
       try {
-        // 1. Store the file binary
+        // 1. Store the raw PDF binary
         const fileRecord: FileRecord = {
           id: fileId,
           filename: processedDoc.title,
@@ -72,41 +117,67 @@ export function useDocumentStorage() {
         const docRecord: DocumentRecord = {
           id: docId,
           title: processedDoc.title,
-          created_at: now,
           page_count: processedDoc.page_count,
-          chunk_count: processedDoc.chunk_count,
-          section_count: processedDoc.section_count,
           file_id: fileId,
+          created_at: now,
         };
         await db.insertDocument(docRecord);
 
-        // 3. Store chunks
-        const chunks: ChunkRecord[] = processedDoc.chunks.map((chunk) => ({
-          id: 0, // Will be auto-generated
-          document_id: docId,
-          index: chunk.index,
-          page_number: chunk.page_number,
-          text: chunk.text,
-        }));
-        await db.insertChunks(chunks);
-
-        // 4. Store sections
-        const sections: SectionRecord[] = processedDoc.sections.map(
-          (section) => ({
-            id: 0, // Will be auto-generated
+        // 3. Store content blocks
+        const blockRecords: ContentBlockRecord[] = processedDoc.blocks.map(
+          (block) => ({
+            id: block.id,
             document_id: docId,
-            index: section.index,
-            title: section.title,
-            level: section.level,
-            start_chunk_index: section.start_chunk_index,
+            block_index: block.block_index,
+            page_number: block.page_number,
+            block_type: block.block_type,
+            text: block.text ?? null,
+            ocr_text: block.ocr_text ?? null,
+            bbox_x0: block.bbox?.x0 ?? null,
+            bbox_y0: block.bbox?.y0 ?? null,
+            bbox_x1: block.bbox?.x1 ?? null,
+            bbox_y1: block.bbox?.y1 ?? null,
+            file_id: block.file_id ?? null,
+            ai_description: block.ai_description ?? null,
+            tts_override: block.tts_override ?? null,
           })
         );
-        await db.insertSections(sections);
+        await db.insertBlocks(blockRecords);
 
-        console.log(`✓ Document stored: ${docId}`);
+        // 4. Store structured table data for table blocks
+        const tableRecords: BlockTableRecord[] = processedDoc.blocks
+          .filter((block) => block.block_type === 'table' && block.table !== null)
+          .map((block) => ({
+            id: Crypto.randomUUID(),
+            block_id: block.id,
+            rows_json: JSON.stringify(block.table!.rows),
+            headers_json: block.table!.headers
+              ? JSON.stringify(block.table!.headers)
+              : null,
+            markdown: block.table!.markdown,
+          }));
+
+        for (const tableRecord of tableRecords) {
+          await db.insertBlockTable(tableRecord);
+        }
+
+        // 5. Store sections
+        const sectionRecords: SectionRecord[] = processedDoc.sections.map(
+          (section) => ({
+            id: section.id,
+            document_id: docId,
+            section_index: section.section_index,
+            title: section.title,
+            level: section.level,
+            start_block_id: section.start_block_id,
+          })
+        );
+        await db.insertSections(sectionRecords);
+
+        console.log(`Document stored: ${docId}`);
         return docId;
       } catch (error) {
-        console.error('✗ Failed to store document:', error);
+        console.error('Failed to store document:', error);
         throw error;
       }
     },
@@ -114,24 +185,24 @@ export function useDocumentStorage() {
   );
 
   /**
-   * Get document with all its chunks and sections
+   * Load a document with all its blocks and sections.
+   * Returns null if the document does not exist.
    */
   const getDocumentWithContent = useCallback(
-    async (documentId: string) => {
+    async (documentId: string): Promise<DocumentWithContent | null> => {
       try {
-        const doc = await db.getDocument(documentId);
-        if (!doc) return null;
+        const document = await db.getDocument(documentId);
+        if (!document) return null;
 
-        const chunks = await db.getChunks(documentId);
-        const sections = await db.getSections(documentId);
+        const [blocks, sections, blockTables] = await Promise.all([
+          db.getBlocks(documentId),
+          db.getSections(documentId),
+          db.getBlockTablesForDocument(documentId),
+        ]);
 
-        return {
-          document: doc,
-          chunks,
-          sections,
-        };
+        return { document, blocks, sections, blockTables };
       } catch (error) {
-        console.error('✗ Failed to get document:', error);
+        console.error('Failed to get document:', error);
         throw error;
       }
     },
@@ -139,33 +210,33 @@ export function useDocumentStorage() {
   );
 
   /**
-   * Get all documents (list view)
+   * Return all documents sorted by creation date descending.
    */
-  const listDocuments = useCallback(async () => {
+  const listDocuments = useCallback(async (): Promise<DocumentRecord[]> => {
     try {
       return await db.getAllDocuments();
     } catch (error) {
-      console.error('✗ Failed to list documents:', error);
+      console.error('Failed to list documents:', error);
       throw error;
     }
   }, [db]);
 
   /**
-   * Delete document and cascade delete chunks/sections
+   * Delete a document and its associated file.
+   * Blocks, block_tables, and sections are removed via CASCADE.
    */
   const removeDocument = useCallback(
     async (documentId: string): Promise<void> => {
       try {
         const doc = await db.getDocument(documentId);
+        await db.deleteDocument(documentId);
+        // Delete file after document to ensure cascading deletes complete
         if (doc) {
-          // Delete associated file
           await db.deleteFile(doc.file_id);
         }
-        // Delete document (cascades to chunks/sections)
-        await db.deleteDocument(documentId);
-        console.log(`✓ Document deleted: ${documentId}`);
+        console.log(`Document deleted: ${documentId}`);
       } catch (error) {
-        console.error('✗ Failed to delete document:', error);
+        console.error('Failed to delete document:', error);
         throw error;
       }
     },
@@ -173,31 +244,43 @@ export function useDocumentStorage() {
   );
 
   /**
-   * Get chunks for a specific section
+   * Return all blocks that belong to a given section.
+   *
+   * A section owns all blocks from its start_block_id (inclusive) up to
+   * but not including the start_block_id of the next section.
+   * For the last section, all remaining blocks are included.
    */
-  const getChunksInSection = useCallback(
+  const getBlocksInSection = useCallback(
     async (
       documentId: string,
       sectionIndex: number
-    ): Promise<ChunkRecord[]> => {
+    ): Promise<ContentBlockRecord[]> => {
       try {
-        const sections = await db.getSections(documentId);
-        const section = sections[sectionIndex];
+        const [blocks, sections] = await Promise.all([
+          db.getBlocks(documentId),
+          db.getSections(documentId),
+        ]);
 
+        const section = sections[sectionIndex];
         if (!section) {
           throw new Error(`Section ${sectionIndex} not found`);
         }
 
-        // Find chunks from this section to the start of next section
-        const chunks = await db.getChunks(documentId);
-        const nextSection = sections[sectionIndex + 1];
-        const endChunkIndex = nextSection ? nextSection.start_chunk_index : chunks.length;
+        const startBlock = blocks.find((b) => b.id === section.start_block_id);
+        if (!startBlock) return [];
 
-        return chunks.filter(
-          (c) => c.index >= section.start_chunk_index && c.index < endChunkIndex
-        );
+        const nextSection = sections[sectionIndex + 1];
+        const endBlock = nextSection
+          ? blocks.find((b) => b.id === nextSection.start_block_id)
+          : null;
+
+        return blocks.filter((b) => {
+          if (b.block_index < startBlock.block_index) return false;
+          if (endBlock && b.block_index >= endBlock.block_index) return false;
+          return true;
+        });
       } catch (error) {
-        console.error('✗ Failed to get section chunks:', error);
+        console.error('Failed to get blocks in section:', error);
         throw error;
       }
     },
@@ -209,6 +292,6 @@ export function useDocumentStorage() {
     getDocumentWithContent,
     listDocuments,
     removeDocument,
-    getChunksInSection,
+    getBlocksInSection,
   };
 }

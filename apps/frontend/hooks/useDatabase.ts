@@ -1,37 +1,36 @@
 /**
  * React Hook: useDatabase
- * 
- * Low-level CRUD operations for documents, chunks, sections, files
+ *
+ * Low-level CRUD operations for documents, content_blocks, block_tables,
+ * sections, and files.
  */
 
 import { useCallback } from 'react';
-import {
-  executeQuery,
-  executeUpdate,
-  getOne,
-} from '@/services/database';
+import { executeQuery, executeUpdate, getOne } from '@/services/database';
 import {
   DocumentRecord,
-  ChunkRecord,
+  ContentBlockRecord,
+  BlockTableRecord,
   SectionRecord,
   FileRecord,
 } from '@/constants/database-schema';
 
 export function useDatabase() {
-  // --- DOCUMENTS OPERATIONS ---
+
+  // ---------------------------------------------------------------------------
+  // Documents
+  // ---------------------------------------------------------------------------
 
   const insertDocument = useCallback(
     async (doc: DocumentRecord): Promise<void> => {
       const sql = `
-        INSERT INTO documents (id, title, page_count, chunk_count, section_count, file_id, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO documents (id, title, page_count, file_id, created_at)
+        VALUES (?, ?, ?, ?, ?)
       `;
       await executeUpdate(sql, [
         doc.id,
         doc.title,
         doc.page_count,
-        doc.chunk_count,
-        doc.section_count,
         doc.file_id,
         doc.created_at,
       ]);
@@ -41,99 +40,159 @@ export function useDatabase() {
 
   const getDocument = useCallback(
     async (documentId: string): Promise<DocumentRecord | null> => {
-      const sql = 'SELECT * FROM documents WHERE id = ?';
-      return getOne(sql, [documentId]);
+      return getOne('SELECT * FROM documents WHERE id = ?', [documentId]);
     },
     []
   );
 
-  const getAllDocuments = useCallback(async (): Promise<DocumentRecord[]> => {
-    const sql =
-      'SELECT * FROM documents ORDER BY created_at DESC';
-    return executeQuery(sql);
-  }, []);
+  const getAllDocuments = useCallback(
+    async (): Promise<DocumentRecord[]> => {
+      return executeQuery('SELECT * FROM documents ORDER BY created_at DESC');
+    },
+    []
+  );
 
   const deleteDocument = useCallback(
     async (documentId: string): Promise<void> => {
-      // Cascading delete handled by foreign keys
-      const sql = 'DELETE FROM documents WHERE id = ?';
-      await executeUpdate(sql, [documentId]);
+      await executeUpdate('DELETE FROM documents WHERE id = ?', [documentId]);
     },
     []
   );
 
   const updateDocument = useCallback(
     async (documentId: string, updates: Partial<DocumentRecord>): Promise<void> => {
-      const fields = Object.keys(updates)
-        .map((key) => `${key} = ?`)
-        .join(', ');
+      const fields = Object.keys(updates).map((key) => `${key} = ?`).join(', ');
       const values = Object.values(updates);
-      const sql = `UPDATE documents SET ${fields} WHERE id = ?`;
-      await executeUpdate(sql, [...values, documentId]);
+      await executeUpdate(
+        `UPDATE documents SET ${fields} WHERE id = ?`,
+        [...values, documentId]
+      );
     },
     []
   );
 
-  // --- CHUNKS OPERATIONS ---
+  // ---------------------------------------------------------------------------
+  // Content blocks
+  // ---------------------------------------------------------------------------
 
-  const insertChunks = useCallback(
-    async (chunks: ChunkRecord[]): Promise<void> => {
-      if (!chunks.length) return;
-
-      // Batch insert for efficiency
+  const insertBlocks = useCallback(
+    async (blocks: ContentBlockRecord[]): Promise<void> => {
+      if (!blocks.length) return;
       const sql = `
-        INSERT INTO chunks (document_id, "index", page_number, text)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO content_blocks (
+          id, document_id, block_index, page_number, block_type,
+          text, ocr_text,
+          bbox_x0, bbox_y0, bbox_x1, bbox_y1,
+          file_id, ai_description, tts_override
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
-
-      for (const chunk of chunks) {
+      for (const block of blocks) {
         await executeUpdate(sql, [
-          chunk.document_id,
-          chunk.index,
-          chunk.page_number,
-          chunk.text,
+          block.id,
+          block.document_id,
+          block.block_index,
+          block.page_number,
+          block.block_type,
+          block.text ?? null,
+          block.ocr_text ?? null,
+          block.bbox_x0 ?? null,
+          block.bbox_y0 ?? null,
+          block.bbox_x1 ?? null,
+          block.bbox_y1 ?? null,
+          block.file_id ?? null,
+          block.ai_description ?? null,
+          block.tts_override ?? null,
         ]);
       }
     },
     []
   );
 
-  const getChunks = useCallback(
-    async (documentId: string): Promise<ChunkRecord[]> => {
-      const sql =
-        'SELECT * FROM chunks WHERE document_id = ? ORDER BY "index" ASC';
-      return executeQuery(sql, [documentId]);
+  const getBlocks = useCallback(
+    async (documentId: string): Promise<ContentBlockRecord[]> => {
+      return executeQuery(
+        'SELECT * FROM content_blocks WHERE document_id = ? ORDER BY block_index ASC',
+        [documentId]
+      );
     },
     []
   );
 
-  const getChunk = useCallback(
-    async (documentId: string, index: number): Promise<ChunkRecord | null> => {
-      const sql =
-        'SELECT * FROM chunks WHERE document_id = ? AND "index" = ?';
-      return getOne(sql, [documentId, index]);
+  const getBlock = useCallback(
+    async (blockId: string): Promise<ContentBlockRecord | null> => {
+      return getOne('SELECT * FROM content_blocks WHERE id = ?', [blockId]);
     },
     []
   );
 
-  // --- SECTIONS OPERATIONS ---
+  // ---------------------------------------------------------------------------
+  // Block tables (structured data for table blocks)
+  // ---------------------------------------------------------------------------
+
+  const insertBlockTable = useCallback(
+    async (blockTable: BlockTableRecord): Promise<void> => {
+      const sql = `
+        INSERT INTO block_tables (id, block_id, rows_json, headers_json, markdown)
+        VALUES (?, ?, ?, ?, ?)
+      `;
+      await executeUpdate(sql, [
+        blockTable.id,
+        blockTable.block_id,
+        blockTable.rows_json,
+        blockTable.headers_json ?? null,
+        blockTable.markdown,
+      ]);
+    },
+    []
+  );
+
+  const getBlockTable = useCallback(
+    async (blockId: string): Promise<BlockTableRecord | null> => {
+      return getOne('SELECT * FROM block_tables WHERE block_id = ?', [blockId]);
+    },
+    []
+  );
+
+  /**
+   * Load all block_tables for a document in a single query.
+   * Returns a Map keyed by block_id for O(1) lookup in the render layer.
+   */
+  const getBlockTablesForDocument = useCallback(
+    async (documentId: string): Promise<Map<string, BlockTableRecord>> => {
+      const rows = await executeQuery<BlockTableRecord>(
+        `SELECT bt.* FROM block_tables bt
+         INNER JOIN content_blocks cb ON cb.id = bt.block_id
+         WHERE cb.document_id = ?`,
+        [documentId]
+      );
+      const map = new Map<string, BlockTableRecord>();
+      for (const row of rows) {
+        map.set(row.block_id, row);
+      }
+      return map;
+    },
+    []
+  );
+
+  // ---------------------------------------------------------------------------
+  // Sections
+  // ---------------------------------------------------------------------------
 
   const insertSections = useCallback(
     async (sections: SectionRecord[]): Promise<void> => {
       if (!sections.length) return;
-
       const sql = `
-        INSERT INTO sections (document_id, "index", title, level, start_chunk_index)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO sections (id, document_id, section_index, title, level, start_block_id)
+        VALUES (?, ?, ?, ?, ?, ?)
       `;
-
       for (const section of sections) {
         await executeUpdate(sql, [
+          section.id,
           section.document_id,
-          section.index,
+          section.section_index,
           section.title,
           section.level,
-          section.start_chunk_index,
+          section.start_block_id,
         ]);
       }
     },
@@ -142,14 +201,17 @@ export function useDatabase() {
 
   const getSections = useCallback(
     async (documentId: string): Promise<SectionRecord[]> => {
-      const sql =
-        'SELECT * FROM sections WHERE document_id = ? ORDER BY "index" ASC';
-      return executeQuery(sql, [documentId]);
+      return executeQuery(
+        'SELECT * FROM sections WHERE document_id = ? ORDER BY section_index ASC',
+        [documentId]
+      );
     },
     []
   );
 
-  // --- FILES OPERATIONS ---
+  // ---------------------------------------------------------------------------
+  // Files
+  // ---------------------------------------------------------------------------
 
   const insertFile = useCallback(
     async (file: FileRecord): Promise<void> => {
@@ -172,16 +234,14 @@ export function useDatabase() {
 
   const getFile = useCallback(
     async (fileId: string): Promise<FileRecord | null> => {
-      const sql = 'SELECT * FROM files WHERE id = ?';
-      return getOne(sql, [fileId]);
+      return getOne('SELECT * FROM files WHERE id = ?', [fileId]);
     },
     []
   );
 
   const deleteFile = useCallback(
     async (fileId: string): Promise<void> => {
-      const sql = 'DELETE FROM files WHERE id = ?';
-      await executeUpdate(sql, [fileId]);
+      await executeUpdate('DELETE FROM files WHERE id = ?', [fileId]);
     },
     []
   );
@@ -193,10 +253,14 @@ export function useDatabase() {
     getAllDocuments,
     deleteDocument,
     updateDocument,
-    // Chunks
-    insertChunks,
-    getChunks,
-    getChunk,
+    // Content blocks
+    insertBlocks,
+    getBlocks,
+    getBlock,
+    // Block tables
+    insertBlockTable,
+    getBlockTable,
+    getBlockTablesForDocument,
     // Sections
     insertSections,
     getSections,

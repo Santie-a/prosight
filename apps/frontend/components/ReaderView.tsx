@@ -8,15 +8,17 @@ import {
   Modal,
 } from 'react-native';
 import { useAccessibility } from '@/contexts/AccessibilityContext';
-import { useDocumentStorage } from '@/hooks/useDocumentStorage';
+import { useDocumentStorage, DocumentWithContent } from '@/hooks/useDocumentStorage';
 import { useAudioPlayback } from '@/hooks/useAudioPlayback';
 import { Text } from '@/components/ui/Text';
 import { SectionsMenu } from '@/components/SectionsMenu';
 import {
   DocumentRecord,
-  ChunkRecord,
+  ContentBlockRecord,
+  BlockTableRecord,
   SectionRecord,
 } from '@/constants/database-schema';
+import { ScrollView } from 'react-native';
 
 interface ReaderViewProps {
   documentId: string;
@@ -31,6 +33,24 @@ const formatTime = (milliseconds: number): string => {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 };
 
+/**
+ * Resolve the best text to send to TTS for a given block.
+ *
+ * Priority:
+ *   tts_override  — manually curated, always preferred if present
+ *   text          — native extracted text (covers text, heading, table markdown)
+ *   ocr_text      — OCR fallback for figures and low-quality scans
+ *   ai_description — AI-generated figure description
+ *   default       — generic page announcement so TTS never goes silent
+ */
+function resolveTtsText(block: ContentBlockRecord): string {
+  if (block.tts_override) return block.tts_override;
+  if (block.text) return block.text;
+  if (block.ocr_text) return block.ocr_text;
+  if (block.ai_description) return block.ai_description;
+  return `Figure on page ${block.page_number}`;
+}
+
 export const ReaderView: React.FC<ReaderViewProps> = ({
   documentId,
   visible,
@@ -40,18 +60,16 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   const { getDocumentWithContent } = useDocumentStorage();
   const audioPlayback = useAudioPlayback();
 
-  // Document state
   const [document, setDocument] = useState<DocumentRecord | null>(null);
-  const [chunks, setChunks] = useState<ChunkRecord[]>([]);
+  const [blocks, setBlocks] = useState<ContentBlockRecord[]>([]);
   const [sections, setSections] = useState<SectionRecord[]>([]);
+  const [blockTables, setBlockTables] = useState<Map<string, BlockTableRecord>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // UI state
-  const [currentChunkIndex, setCurrentChunkIndex] = useState(-1);
+  const [currentBlockIndex, setCurrentBlockIndex] = useState(-1);
   const [showSectionsMenu, setShowSectionsMenu] = useState(false);
   const flatListRef = useRef<FlatList>(null);
-  const wasPlayingRef = useRef(false);
 
   const styles = StyleSheet.create({
     container: {
@@ -81,48 +99,167 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
       borderRadius: 6,
       backgroundColor: theme.primary,
     },
-    headerButtonText: {
-      color: '#FFFFFF',
-      fontSize: fontSize.button - 2,
-      fontWeight: '600',
-    },
     closeButton: {
       paddingHorizontal: 12,
       paddingVertical: 8,
       borderRadius: 6,
       backgroundColor: theme.textSecondary,
     },
+    headerButtonText: {
+      color: '#FFFFFF',
+      fontSize: fontSize.button - 2,
+      fontWeight: '600',
+    },
     contentContainer: {
       flex: 1,
     },
-    chunkItem: {
+
+    // --- Shared block wrapper ---
+    blockItem: {
       paddingHorizontal: 16,
       paddingVertical: 12,
       borderBottomWidth: 1,
       borderBottomColor: theme.border,
       backgroundColor: theme.surface,
     },
-    chunkItemActive: {
+    blockItemActive: {
       backgroundColor: `${theme.primary}20`,
       borderLeftWidth: 4,
       borderLeftColor: theme.primary,
       paddingHorizontal: 13,
     },
-    chunkNumber: {
+    blockMeta: {
       fontSize: fontSize.body - 3,
       color: theme.textSecondary,
       marginBottom: 4,
     },
-    chunkText: {
-      fontSize: fontSize.body,
-      lineHeight: fontSize.body * 1.6,
-      color: theme.text,
-    },
-    chunkPageIndicator: {
+    pageIndicator: {
       fontSize: fontSize.body - 2,
       color: theme.textSecondary,
       marginTop: 8,
     },
+
+    // --- Text block ---
+    textContent: {
+      fontSize: fontSize.body,
+      lineHeight: fontSize.body * 1.6,
+      color: theme.text,
+    },
+
+    // --- Heading block ---
+    headingContent: {
+      fontSize: fontSize.body + 2,
+      fontWeight: '700',
+      color: theme.text,
+      lineHeight: (fontSize.body + 2) * 1.4,
+    },
+
+    // --- Table block ---
+    tableWrapper: {
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.border,
+      overflow: 'hidden',
+    },
+    tableLabel: {
+      fontSize: fontSize.body - 2,
+      color: theme.textSecondary,
+      fontStyle: 'italic',
+      paddingHorizontal: 12,
+      paddingTop: 8,
+      paddingBottom: 4,
+      backgroundColor: theme.background,
+    },
+    tableHeaderRow: {
+      flexDirection: 'row',
+      backgroundColor: theme.primary,
+    },
+    tableRow: {
+      flexDirection: 'row',
+      borderTopWidth: 1,
+      borderTopColor: theme.border,
+    },
+    tableRowAlt: {
+      backgroundColor: `${theme.primary}08`,
+    },
+    tableHeaderCell: {
+      flex: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      minWidth: 80,
+    },
+    tableHeaderCellText: {
+      fontSize: fontSize.body - 1,
+      fontWeight: '700',
+      color: '#FFFFFF',
+    },
+    tableCell: {
+      flex: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      minWidth: 80,
+      borderRightWidth: 1,
+      borderRightColor: theme.border,
+    },
+    tableCellLast: {
+      borderRightWidth: 0,
+    },
+    tableCellText: {
+      fontSize: fontSize.body - 1,
+      color: theme.text,
+      lineHeight: (fontSize.body - 1) * 1.4,
+    },
+    tableFallback: {
+      padding: 12,
+      backgroundColor: theme.background,
+    },
+    tableFallbackText: {
+      fontSize: fontSize.body - 2,
+      color: theme.text,
+      fontFamily: 'monospace',
+    },
+
+    // --- Figure block ---
+    figureContainer: {
+      backgroundColor: theme.background,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: theme.border,
+      padding: 12,
+      alignItems: 'center',
+      gap: 8,
+    },
+    figurePlaceholder: {
+      fontSize: 32,
+    },
+    figureLabel: {
+      fontSize: fontSize.body - 1,
+      color: theme.textSecondary,
+      fontStyle: 'italic',
+      textAlign: 'center',
+    },
+    figureOcrText: {
+      fontSize: fontSize.body - 2,
+      color: theme.text,
+      textAlign: 'center',
+      marginTop: 4,
+    },
+
+    // --- Formula block ---
+    formulaContainer: {
+      backgroundColor: theme.background,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: theme.border,
+      padding: 8,
+    },
+    formulaContent: {
+      fontSize: fontSize.body - 1,
+      color: theme.text,
+      fontFamily: 'monospace',
+    },
+
+    // --- Audio controls ---
     audioControlsContainer: {
       backgroundColor: theme.surface,
       borderTopWidth: 1,
@@ -158,6 +295,8 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
       color: theme.textSecondary,
       textAlign: 'center',
     },
+
+    // --- States ---
     loadingContainer: {
       flex: 1,
       justifyContent: 'center',
@@ -188,7 +327,10 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     },
   });
 
-  // Load document on mount
+  // ---------------------------------------------------------------------------
+  // Load document
+  // ---------------------------------------------------------------------------
+
   useEffect(() => {
     if (!visible || !documentId) return;
 
@@ -197,16 +339,19 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         setLoading(true);
         setError(null);
 
-        const fullDocument = await getDocumentWithContent(documentId);
-        if (!fullDocument) {
+        const result: DocumentWithContent | null =
+          await getDocumentWithContent(documentId);
+
+        if (!result) {
           setError('Document not found');
           return;
         }
 
-        setDocument(fullDocument.document);
-        setChunks(fullDocument.chunks || []);
-        setSections(fullDocument.sections || []);
-        setCurrentChunkIndex(-1);
+        setDocument(result.document);
+        setBlocks(result.blocks);
+        setSections(result.sections);
+        setBlockTables(result.blockTables);
+        setCurrentBlockIndex(-1);
       } catch (err) {
         console.error('Error loading document:', err);
         setError('Failed to load document');
@@ -218,54 +363,169 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     loadDocument();
   }, [visible, documentId, getDocumentWithContent]);
 
-  const handleStartReadingChunk = useCallback(
-    (chunkIndex: number) => {
-      if (chunkIndex >= 0 && chunkIndex < chunks.length) {
-        setCurrentChunkIndex(chunkIndex);
-        const chunk = chunks[chunkIndex];
-        audioPlayback.synthesizeAndPlay(chunk.text);
-      }
+  // ---------------------------------------------------------------------------
+  // Navigation and playback
+  // ---------------------------------------------------------------------------
+
+  const handleReadBlock = useCallback(
+    (blockIndex: number) => {
+      if (blockIndex < 0 || blockIndex >= blocks.length) return;
+      setCurrentBlockIndex(blockIndex);
+      const block = blocks[blockIndex];
+      audioPlayback.synthesizeAndPlay(resolveTtsText(block));
     },
-    [chunks, audioPlayback]
+    [blocks, audioPlayback]
   );
 
-  const handleScrollToChunk = useCallback((chunkIndex: number) => {
-    setCurrentChunkIndex(chunkIndex);
+  const handleScrollToBlock = useCallback((blockIndex: number) => {
+    setCurrentBlockIndex(blockIndex);
     flatListRef.current?.scrollToIndex({
-      index: chunkIndex,
+      index: blockIndex,
       animated: true,
-      viewPosition: 0.5,
+      viewPosition: 0.3,
     });
   }, []);
 
   const handleSectionSelect = useCallback(
-    (startChunkIndex: number) => {
-      handleScrollToChunk(startChunkIndex);
+    (blockIndex: number) => {
+      handleScrollToBlock(blockIndex);
       setShowSectionsMenu(false);
     },
-    [handleScrollToChunk]
+    [handleScrollToBlock]
   );
 
-  const renderChunk = (item: ChunkRecord, index: number) => {
-    const isActive = index === currentChunkIndex;
+  // ---------------------------------------------------------------------------
+  // Block renderers
+  // ---------------------------------------------------------------------------
+
+  const renderTable = (block: ContentBlockRecord) => {
+    const tableRecord = blockTables.get(block.id);
+
+    // If structured data is not available fall back to the markdown string
+    if (!tableRecord) {
+      return (
+        <View style={styles.tableFallback}>
+          <Text style={styles.tableFallbackText}>{block.text}</Text>
+        </View>
+      );
+    }
+
+    const headers: string[] | null = tableRecord.headers_json
+      ? JSON.parse(tableRecord.headers_json)
+      : null;
+    const rows: string[][] = JSON.parse(tableRecord.rows_json);
+    const colCount = Math.max(
+      headers?.length ?? 0,
+      ...rows.map((r) => r.length)
+    );
+
+    return (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View>
+          {/* Header row */}
+          {headers && (
+            <View style={styles.tableHeaderRow}>
+              {Array.from({ length: colCount }).map((_, ci) => (
+                <View key={ci} style={styles.tableHeaderCell}>
+                  <Text style={styles.tableHeaderCellText}>
+                    {headers[ci] ?? ''}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+          {/* Data rows */}
+          {rows.map((row, ri) => (
+            <View
+              key={ri}
+              style={[styles.tableRow, ri % 2 === 1 && styles.tableRowAlt]}
+            >
+              {Array.from({ length: colCount }).map((_, ci) => (
+                <View
+                  key={ci}
+                  style={[
+                    styles.tableCell,
+                    ci === colCount - 1 && styles.tableCellLast,
+                  ]}
+                >
+                  <Text style={styles.tableCellText}>{row[ci] ?? ''}</Text>
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+    );
+  };
+
+  const renderBlockContent = (block: ContentBlockRecord) => {
+    switch (block.block_type) {
+      case 'heading':
+        return <Text style={styles.headingContent}>{block.text}</Text>;
+
+      case 'table':
+        return (
+          <View style={styles.tableWrapper}>
+            <Text style={styles.tableLabel}>Table · page {block.page_number}</Text>
+            {renderTable(block)}
+          </View>
+        );
+
+      case 'figure':
+        return (
+          <View style={styles.figureContainer}>
+            <Text style={styles.figurePlaceholder}>🖼</Text>
+            <Text style={styles.figureLabel}>
+              {block.ai_description ?? `Figure on page ${block.page_number}`}
+            </Text>
+            {block.ocr_text ? (
+              <Text style={styles.figureOcrText}>{block.ocr_text}</Text>
+            ) : null}
+          </View>
+        );
+
+      case 'formula':
+        return (
+          <View style={styles.formulaContainer}>
+            <Text style={styles.formulaContent}>{block.text}</Text>
+          </View>
+        );
+
+      case 'text':
+      default:
+        return <Text style={styles.textContent}>{block.text}</Text>;
+    }
+  };
+
+  const renderBlock = ({
+    item,
+    index,
+  }: {
+    item: ContentBlockRecord;
+    index: number;
+  }) => {
+    const isActive = index === currentBlockIndex;
 
     return (
       <Pressable
-        onPress={() => handleStartReadingChunk(index)}
-        style={[styles.chunkItem, isActive && styles.chunkItemActive]}
+        onPress={() => handleReadBlock(index)}
+        style={[styles.blockItem, isActive && styles.blockItemActive]}
       >
-        <Text style={styles.chunkNumber}>
-          Chunk {index + 1} of {chunks.length}
+        <Text style={styles.blockMeta}>
+          {item.block_type.charAt(0).toUpperCase() + item.block_type.slice(1)}{' '}
+          · {index + 1} of {blocks.length}
         </Text>
-        <Text style={styles.chunkText}>{item.text}</Text>
-        <Text style={styles.chunkPageIndicator}>Page {item.page_number}</Text>
+        {renderBlockContent(item)}
+        <Text style={styles.pageIndicator}>Page {item.page_number}</Text>
       </Pressable>
     );
   };
 
-  if (!visible || !document) {
-    return null;
-  }
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
+  if (!visible || !document) return null;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -286,7 +546,6 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
           </Pressable>
         </View>
 
-        {/* Content */}
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={theme.primary} />
@@ -294,34 +553,29 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         ) : error ? (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
-            <Pressable
-              onPress={() => setError(null)}
-              style={styles.retryButton}
-            >
+            <Pressable onPress={() => setError(null)} style={styles.retryButton}>
               <Text style={styles.retryButtonText}>Try Again</Text>
             </Pressable>
           </View>
-        ) : chunks.length > 0 ? (
+        ) : blocks.length > 0 ? (
           <>
-            {/* Sections Menu Modal */}
             <SectionsMenu
               sections={sections}
-              chunks={chunks}
-              currentChunkIndex={currentChunkIndex}
+              blocks={blocks}
+              currentBlockIndex={currentBlockIndex}
               visible={showSectionsMenu}
               onClose={() => setShowSectionsMenu(false)}
               onSectionSelect={handleSectionSelect}
-              onChunkSelect={handleScrollToChunk}
+              onBlockSelect={handleScrollToBlock}
             />
 
-            {/* Text Reader */}
             <View style={styles.contentContainer}>
               <FlatList
                 ref={flatListRef}
-                data={chunks}
-                keyExtractor={(_, index) => String(index)}
-                renderItem={({ item, index }) => renderChunk(item, index)}
-                scrollEnabled={true}
+                data={blocks}
+                keyExtractor={(item) => item.id}
+                renderItem={renderBlock}
+                scrollEnabled
               />
             </View>
 
@@ -370,8 +624,8 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
 
               {audioPlayback.duration > 0 && (
                 <Text style={styles.progressText}>
-                  {formatTime(audioPlayback.currentTime * 1000)}s /{' '}
-                  {formatTime(audioPlayback.duration * 1000)}s
+                  {formatTime(audioPlayback.currentTime * 1000)} /{' '}
+                  {formatTime(audioPlayback.duration * 1000)}
                 </Text>
               )}
             </View>
