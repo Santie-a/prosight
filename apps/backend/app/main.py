@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.dependencies import set_tts_provider, set_vlm_provider
+from app.dependencies import set_tts_provider, set_vlm_provider, set_ocr_provider
 from app.routers import health, vision, documents, tts
 
 
@@ -36,6 +36,11 @@ async def lifespan(app: FastAPI):
     tts = _load_tts_provider()
     set_tts_provider(tts)
     logger.info("TTS provider ready.")
+
+    logger.info("Loading OCR provider: %s", settings.ocr_provider)
+    ocr = _load_ocr_provider()
+    set_ocr_provider(ocr)
+    logger.info("OCR provider ready.")
 
     logger.info("All systems ready. Serving on %s:%s", settings.app_host, settings.app_port)
 
@@ -67,6 +72,16 @@ def _load_tts_provider():
             device=settings.tts_device,
         )
     raise ValueError(f"Unknown TTS provider: {settings.tts_provider}")
+
+
+def _load_ocr_provider():
+    from app.services.ocr import RapidOCRProvider
+
+    if settings.ocr_provider == "rapidocr":
+        return RapidOCRProvider(
+            device=settings.ocr_device,
+        )
+    raise ValueError(f"Unknown OCR provider: {settings.ocr_provider}")
 
 
 def create_app() -> FastAPI:

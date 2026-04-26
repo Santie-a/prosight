@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     tts_sample_rate: int = 24000
     tts_device: str = "cpu"
 
+    # --- OCR ---
+    ocr_provider: str = "rapidocr"
+    ocr_device: str = "cpu"
+
     # --- CORS ---
     cors_origins: list[str] = [
         "http://localhost:8081",
