@@ -118,7 +118,7 @@ Edit `apps/frontend/constants/config.ts` to point to your backend:
 const API_BASE_URL = 'http://localhost:8000';
 ```
 
-## 📚 Features & Capabilities
+## Features & Capabilities
 
 ### Backend Features
 
@@ -224,7 +224,7 @@ Services will be available at:
 - Backend API: http://localhost:8000
 - Frontend (Dev): http://localhost:8081
 
-## 🧪 Testing
+## Testing
 
 ### Backend
 
@@ -274,7 +274,7 @@ npm test
 
 This project is licensed under the Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License. See the [LICENSE](LICENSE) file for details.
 
-## 🤝 Contributing
+## Contributing
 
 I would be grateful
 
@@ -282,7 +282,7 @@ I would be grateful
 
 For issues, questions, or feature requests, please open an issue in the repository.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Built with [FastAPI](https://fastapi.tiangolo.com/)
 - Powered by [Moondream2](https://github.com/vikhyatk/moondream) for vision
