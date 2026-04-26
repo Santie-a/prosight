@@ -86,6 +86,41 @@ export const THEMES: Record<string, Theme> = {
 export const THEME_NAMES = ['light', 'dark', 'highContrast'] as const;
 export const FONT_SIZE_NAMES = ['small', 'medium', 'large', 'extraLarge'] as const;
 
+export const VOICES: Record<string, { id: string; label: string; description: string }> = {
+  af_bella: {
+    id: 'af_bella',
+    label: 'Bella',
+    description: 'Female voice - Bella',
+  },
+  af_heart: {
+    id: 'af_heart',
+    label: 'Heart',
+    description: 'Female voice - Heart (Default)',
+  },
+  af_sky: {
+    id: 'af_sky',
+    label: 'Sky',
+    description: 'Female voice - Sky',
+  },
+  am_echo: {
+    id: 'am_echo',
+    label: 'Echo',
+    description: 'Male voice - Echo',
+  },
+  am_liam: {
+    id: 'am_liam',
+    label: 'Liam',
+    description: 'Male voice - Liam',
+  },
+  am_puck: {
+    id: 'am_puck',
+    label: 'Puck',
+    description: 'Male voice - Puck',
+  },
+};
+
+export const VOICE_NAMES = ['af_bella', 'af_heart', 'af_sky', 'am_echo', 'am_liam', 'am_puck'] as const;
+
 // File size limits (in bytes)
 export const FILE_LIMITS = {
   IMAGE: 10 * 1024 * 1024, // 10 MB

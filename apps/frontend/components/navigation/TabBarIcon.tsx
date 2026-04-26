@@ -9,7 +9,7 @@ interface TabBarIconProps {
 export function TabBarIcon({ name, color }: TabBarIconProps) {
   return (
     <Ionicons
-      size={28}
+      size={32}
       style={styles.icon}
       name={name}
       color={color}

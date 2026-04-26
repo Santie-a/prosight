@@ -34,7 +34,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   onAnalyzeAnother,
   onCopy,
 }) => {
-  const { theme, fontSize } = useAccessibility();
+  const { theme, fontSize, voiceName } = useAccessibility();
   const { isLoading, isPlaying, currentTime, duration, error: audioError, synthesizeAndPlay, pause, resume, stop } = useAudioPlayback();
 
   const [showAudioControls, setShowAudioControls] = useState(false);
@@ -43,7 +43,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
   useEffect(() => {
     const autoPlayAudio = async () => {
       try {
-        await synthesizeAndPlay(description);
+        await synthesizeAndPlay(description, voiceName);
         setShowAudioControls(true);
       } catch (err) {
         console.error('Error auto-synthesizing audio:', err);
@@ -52,7 +52,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({
 
     autoPlayAudio();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [voiceName]);
 
   const styles = StyleSheet.create({
     container: {

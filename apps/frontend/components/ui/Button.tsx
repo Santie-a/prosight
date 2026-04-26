@@ -1,13 +1,11 @@
 import React from 'react';
 import {
   TouchableOpacity,
-  View,
-  StyleSheet,
   ViewStyle,
 } from 'react-native';
 import { useAccessibility } from '@/contexts/AccessibilityContext';
 import { Text } from './Text';
-// 1. Importar los iconos
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons'; 
 
 interface ButtonProps {
@@ -17,7 +15,6 @@ interface ButtonProps {
   disabled?: boolean;
   accessibilityLabel?: string;
   style?: ViewStyle;
-  // 2. Nuevas props para el icono
   iconName?: keyof typeof Ionicons.glyphMap;
   iconSize?: number;
 }
@@ -75,9 +72,14 @@ export const Button: React.FC<ButtonProps> = ({
     return theme.text;
   };
 
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onPress();
+  };
+
   return (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled}
       activeOpacity={0.7}
       accessible={true}

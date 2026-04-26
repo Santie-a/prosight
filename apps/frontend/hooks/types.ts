@@ -1,5 +1,6 @@
 export type ThemeName = 'light' | 'dark' | 'highContrast';
 export type FontSizeName = 'small' | 'medium' | 'large' | 'extraLarge';
+export type VoiceName = 'af_bella' | 'af_heart' | 'af_sky' | 'am_echo' | 'am_liam' | 'am_puck';
 
 export interface Theme {
   name: string;

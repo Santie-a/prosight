@@ -56,7 +56,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   visible,
   onClose,
 }) => {
-  const { theme, fontSize } = useAccessibility();
+  const { theme, fontSize, voiceName } = useAccessibility();
   const { getDocumentWithContent } = useDocumentStorage();
   const audioPlayback = useAudioPlayback();
 
@@ -372,9 +372,9 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
       if (blockIndex < 0 || blockIndex >= blocks.length) return;
       setCurrentBlockIndex(blockIndex);
       const block = blocks[blockIndex];
-      audioPlayback.synthesizeAndPlay(resolveTtsText(block));
+      audioPlayback.synthesizeAndPlay(resolveTtsText(block), voiceName);
     },
-    [blocks, audioPlayback]
+    [blocks, audioPlayback, voiceName]
   );
 
   const handleScrollToBlock = useCallback((blockIndex: number) => {

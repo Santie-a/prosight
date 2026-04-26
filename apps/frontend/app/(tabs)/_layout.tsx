@@ -9,13 +9,16 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
+        tabBarShowLabel: false,
+
         tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.textSecondary,
         tabBarStyle: {
           backgroundColor: theme.surface,
           borderTopColor: theme.border,
           borderTopWidth: 1,
-          height: Math.max(50, fontSize.button + 30),
+          height: Math.max(90, fontSize.button + 50), 
+          paddingBottom: 40,
         },
         tabBarLabelStyle: {
           fontSize: fontSize.button,
