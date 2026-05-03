@@ -46,7 +46,7 @@ FastAPI-based backend for the Prosight low-vision accessibility application. Pro
 
    > **Note**: PyTorch is included in `requirements.txt`. For GPU support, you may need to reinstall:
    ```bash
-   pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu118
+   pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
    ```
 
 3. **Download ML Models** (optional, will auto-download on first use):

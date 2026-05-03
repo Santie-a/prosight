@@ -1,3 +1,7 @@
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.4.1+cu121
+torchvision==0.19.1+cu121
+
 accelerate==0.34.2
 addict==2.4.0
 aiofiles==24.1.0
@@ -117,8 +121,6 @@ tabulate==0.10.0
 termcolor==3.3.0
 thinc==8.3.10
 tokenizers==0.19.1
-torch==2.4.1+cu121
-torchvision==0.19.1+cu121
 tqdm==4.67.3
 transformers==4.44.2
 typer==0.24.1
