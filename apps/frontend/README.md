@@ -74,6 +74,7 @@ eas build --platform android
 frontend/
 ├── app/                   # App screens and routing (Expo Router)
 │   ├── (tabs)/            # Tabbed navigation structure
+│   │   ├── _layout.tsx    
 │   │   ├── documents.tsx  # Document browser and management
 │   │   ├── vision.tsx     # Vision analysis screen
 │   │   └── settings.tsx   # Settings and configuration

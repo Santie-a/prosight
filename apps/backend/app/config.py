@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,7 +20,7 @@ class Settings(BaseSettings):
     # --- VLM ---
     vlm_provider: str = "moondream"
     vlm_model_path: str = "vikhyatk/moondream2"
-    vlm_model_revision: str = "2025-06-21"
+    vlm_model_revision: str = "2024-08-26"
     vlm_device: str = "cuda"
 
     # --- TTS ---
@@ -37,6 +38,15 @@ class Settings(BaseSettings):
         "http://localhost:8081",
         "http://localhost:19006",
     ]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v):
+        if isinstance(v, str) and not v.startswith("["):
+            return [i.strip() for i in v.split(",")]
+        elif isinstance(v, (list, str)):
+            return v
+        raise ValueError(v)
 
     model_config = SettingsConfigDict(
         env_file=".env",
